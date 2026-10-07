@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Balloon Game 2 Stats</title>
+  <style>
+    @font-face {
+      font-family: 'Supersonic Rocketship';
+      src: url('../fonts/supersonic_rocketship.ttf') format('truetype');
+    }
+    :root {
+      --bg-top: #0a4f73;
+      --bg-bottom: #062a4a;
+      --panel: rgba(3, 27, 58, 0.85);
+      --edge: #3ef4ff;
+      --text: #ffffff;
+      --muted: #a9d6ea;
+      --bar: #3ef4ff;
+      --track: rgba(62, 244, 255, 0.15);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      color: var(--text);
+      background: linear-gradient(var(--bg-top), var(--bg-bottom)) fixed;
+      padding: 24px 16px 48px;
+    }
+    main { max-width: 760px; margin: 0 auto; }
+    h1, h2, .big {
+      font-family: 'Supersonic Rocketship', system-ui, sans-serif;
+      font-weight: normal;
+      letter-spacing: 0.02em;
+    }
+    h1 { color: var(--edge); font-size: 40px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+    .sub button {
+      font: inherit; color: var(--bg-bottom); background: var(--edge);
+      border: 0; border-radius: 999px; padding: 4px 14px; margin-left: 8px; cursor: pointer;
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--panel);
+      border: 2px solid var(--edge);
+      border-radius: 20px;
+      padding: 16px 18px;
+    }
+    .card .label { color: var(--muted); font-size: 14px; }
+    .card .big { font-size: 38px; margin-top: 6px; }
+    .card .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    section { margin-top: 16px; }
+    h2 { font-size: 24px; margin: 0 0 10px; color: var(--edge); }
+    .row { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 10px; margin: 8px 0; }
+    .row .name { font-weight: 600; }
+    .row .val { text-align: right; font-variant-numeric: tabular-nums; }
+    .row .bar { height: 14px; background: var(--track); border-radius: 999px; overflow: hidden; }
+    .row .bar span { display: block; height: 100%; background: var(--bar); border-radius: 999px; }
+    .empty { color: var(--muted); font-size: 14px; }
+    .status { color: var(--muted); }
+    .error { color: #ffb3a8; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Balloon Game 2 stats</h1>
+    <p class="sub"><span id="status" class="status">Loading…</span><button id="refresh" type="button">Refresh</button></p>
+
+    <div class="grid">
+      <div class="card"><div class="label">Play sessions</div><div class="big" id="sessions">–</div><div class="note">one per game played</div></div>
+      <div class="card"><div class="label">Played until game over</div><div class="big" id="gameover">–</div><div class="note" id="gameover-note"></div></div>
+      <div class="card"><div class="label">Average play time per session</div><div class="big" id="time">–</div><div class="note">until game over, or until they left</div></div>
+      <div class="card"><div class="label">Coins earned per shot fired</div><div class="big" id="perShot">–</div><div class="note" id="perShot-note"></div></div>
+      <div class="card"><div class="label">Coins spent on arrows per session</div><div class="big" id="spent">–</div><div class="note">out-of-arrows packs</div></div>
+    </div>
+
+    <section class="card">
+      <h2>Most used arrows</h2>
+      <div id="arrows" class="empty">–</div>
+    </section>
+
+    <section class="card">
+      <h2>Shots to defeat each boss</h2>
+      <div id="bosses" class="empty">–</div>
+    </section>
+  </main>
+
+  <script>
+    // Reads the play events the game page sends (index.html, "Play
+    // statistics") from the balloon2_events table and adds them up. Each game
+    // is a session: a "start", a "boss" per boss defeated, and an "end" (the
+    // latest one counts). Games where the cheat menu was used are left out.
+    const SUPABASE_URL = 'https://wkhfpujnynwflcimngjg.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_KJAWjztbbgQqlC6IYCYS4g_eeuVSd1z'; // publishable: safe to be public
+    const TABLE = 'balloon2_events';
+    const PAGE = 1000;
+    const ARROWS = { normal: 'Regular', multi: 'Multi', mine: 'Hedgehog', parasite: 'Parasite', fish: 'Fish', lightning: 'Tesla' };
+    const BOSSES = { clown: 'Clown', dog: 'Dog', ghost: 'Ghost' };
+
+    const $ = (id) => document.getElementById(id);
+    const fmt = (n, d = 0) => Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }) : '–';
+    const time = (s) => Number.isFinite(s) ? Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0') : '–';
+
+    async function fetchAll() {
+      const rows = [];
+      for (let from = 0; ; from += PAGE) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=session,kind,data,created_at&order=id.asc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, Range: `${from}-${from + PAGE - 1}` },
+        });
+        if (!res.ok) throw new Error(res.status === 404 ? 'The balloon2_events table doesn’t exist yet.' : 'Couldn’t load the stats (' + res.status + ').');
+        const page = await res.json();
+        rows.push(...page);
+        if (page.length < PAGE) return rows;
+      }
+    }
+
+    function render(rows) {
+      // Group by session.
+      const sessions = new Map();
+      for (const r of rows) {
+        let s = sessions.get(r.session);
+        if (!s) sessions.set(r.session, s = { start: false, end: null, bosses: [] });
+        if (r.kind === 'start') s.start = true;
+        else if (r.kind === 'end') s.end = r.data; // ordered by id: the latest wins
+        else if (r.kind === 'boss') s.bosses.push(r.data);
+      }
+      const played = [...sessions.values()].filter((s) => s.start && !(s.end && s.end.cheated)
+        && !s.bosses.some((b) => b.cheated));
+      const ended = played.filter((s) => s.end);
+
+      $('sessions').textContent = fmt(played.length);
+      const over = played.filter((s) => s.end && s.end.reason === 'gameover').length;
+      $('gameover').textContent = played.length ? fmt(100 * over / played.length) + '%' : '–';
+      $('gameover-note').textContent = `${fmt(over)} of ${fmt(played.length)} sessions`;
+
+      const sum = (key) => ended.reduce((t, s) => t + (s.end[key] || 0), 0);
+      const shots = sum('shots');
+      $('time').textContent = ended.length ? time(sum('time') / ended.length) : '–';
+      $('perShot').textContent = shots ? fmt(sum('earned') / shots, 1) : '–';
+      $('perShot-note').textContent = `${fmt(sum('earned'))} coins over ${fmt(shots)} shots`;
+      $('spent').textContent = ended.length ? fmt(sum('spent') / ended.length, 1) : '–';
+
+      // Arrow kinds, most used first (bow shots).
+      const arrows = {};
+      for (const s of ended) for (const [k, n] of Object.entries(s.end.arrows || {})) arrows[k] = (arrows[k] || 0) + n;
+      const list = Object.entries(arrows).sort((a, b) => b[1] - a[1]);
+      const total = list.reduce((t, [, n]) => t + n, 0);
+      $('arrows').className = list.length ? '' : 'empty';
+      $('arrows').innerHTML = list.length ? list.map(([k, n], i) => `
+        <div class="row"><div class="name">${i + 1}. ${ARROWS[k] || k}</div>
+        <div class="bar"><span style="width:${100 * n / list[0][1]}%"></span></div>
+        <div class="val">${fmt(100 * n / total)}%</div></div>`).join('') : 'No shots yet.';
+
+      // Bosses: average bow shots from its appearance to its defeat.
+      const bosses = {};
+      for (const s of played) for (const b of s.bosses) (bosses[b.boss] = bosses[b.boss] || []).push(b.shots);
+      const blist = Object.keys(BOSSES).filter((k) => bosses[k]).map((k) => [k, bosses[k].reduce((a, b) => a + b, 0) / bosses[k].length, bosses[k].length]);
+      const bmax = Math.max(1, ...blist.map(([, a]) => a));
+      $('bosses').className = blist.length ? '' : 'empty';
+      $('bosses').innerHTML = blist.length ? blist.map(([k, avg, n]) => `
+        <div class="row"><div class="name">${BOSSES[k]}</div>
+        <div class="bar"><span style="width:${100 * avg / bmax}%"></span></div>
+        <div class="val">${fmt(avg, 1)}</div></div>
+        <div class="row" style="margin-top:-6px"><div></div><div class="empty">${fmt(n)} defeated</div><div></div></div>`).join('')
+        : 'No bosses defeated yet.';
+    }
+
+    async function load() {
+      const status = $('status');
+      status.className = 'status';
+      status.textContent = 'Loading…';
+      try {
+        const rows = await fetchAll();
+        render(rows);
+        status.textContent = `${fmt(rows.length)} events · updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+      } catch (e) {
+        status.className = 'error';
+        status.textContent = e.message;
+      }
+    }
+    $('refresh').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>

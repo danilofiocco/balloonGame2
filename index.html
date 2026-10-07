@@ -176,7 +176,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791395939'; // set by build.sh
+    const RIV_VERSION = '1791397414'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -264,6 +264,64 @@
       loading: 'loading...', offline: 'ranking unavailable' };
     document.querySelectorAll('[data-text]').forEach((el) => { el.textContent = WORDS[el.dataset.text]; });
     document.querySelectorAll('[data-placeholder]').forEach((el) => { el.placeholder = WORDS[el.dataset.placeholder]; });
+
+    // ---- Play statistics ---------------------------------------------------
+    // The game keeps its numbers for the game in progress in the "telemetry"
+    // string (JSON); each game is a session. We send three kinds of event to
+    // the balloon2_events table for the stats page (stats/index.html): start,
+    // boss (one per boss defeated) and end (game over, or the player quit or
+    // left; a later one for the same session replaces it). Not from localhost
+    // (add ?track to a local URL to send anyway).
+    const VERSION = '2.0';
+    const EVENTS = 'balloon2_events';
+    const tracking = online && (!/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) || /[?&]track\b/.test(location.search));
+
+    function sendEvent(session, kind, data) {
+      if (!tracking) return;
+      fetch(LEADERBOARD.supabaseUrl + '/rest/v1/' + EVENTS, {
+        method: 'POST',
+        keepalive: true, // still goes out while the page is closing
+        headers: {
+          apikey: LEADERBOARD.supabaseKey,
+          Authorization: 'Bearer ' + LEADERBOARD.supabaseKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ session, kind, data, version: VERSION }),
+      }).catch(() => {});
+    }
+
+    function setupTelemetry(vm) {
+      const prop = vm.string('telemetry');
+      if (!prop) return;
+      let cur = null; // { game, id, bosses sent, snap, ended }
+      const endWith = (reason) => {
+        if (cur && cur.snap) sendEvent(cur.id, 'end', { ...cur.snap, reason });
+      };
+      const read = () => {
+        let snap;
+        try { snap = JSON.parse(prop.value); } catch (e) { return; }
+        if (!cur || snap.game !== cur.game) {
+          if (cur && !cur.ended) endWith('quit'); // restarted before game over
+          cur = { game: snap.game, id: crypto.randomUUID(), bosses: 0, snap: null, ended: false };
+          sendEvent(cur.id, 'start', {});
+        }
+        cur.snap = snap;
+        for (; cur.bosses < snap.bosses.length; cur.bosses++) {
+          sendEvent(cur.id, 'boss', { ...snap.bosses[cur.bosses], cheated: snap.cheated });
+        }
+        if (snap.over && !cur.ended) {
+          cur.ended = true;
+          endWith('gameover');
+        }
+      };
+      prop.on(read);
+      read();
+      // Leaving (or hiding the page, the last chance on phones): the game so far.
+      const leave = () => { if (cur && !cur.ended) endWith('left'); };
+      addEventListener('pagehide', leave);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leave(); });
+    }
 
     function setupLeaderboard(vm) {
       const status = vm.string('rankingStatus');
@@ -383,6 +441,7 @@
         r.resizeDrawingSurfaceToCanvas();
         const vm = r.viewModelInstance;
         if (vm) setupLeaderboard(vm);
+        if (vm) setupTelemetry(vm);
         canvas.focus();
       },
       onLoadError: (e) => {
