@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
-  <title>Poppit</title>
+  <title>Balloon Game 2</title>
   <!-- Fallback for the name box where Arial Rounded MT Bold isn't installed. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap">
   <style>
@@ -153,8 +153,8 @@
   </style>
 </head>
 <body>
-  <!-- The game: build/poppit.riv, signed (rive . --publish) and copied
-       next to this page as poppit.riv. Serve the folder over http(s);
+  <!-- The game: build/balloonGame2.riv, signed (rive . --publish) and copied
+       next to this page as balloonGame2.riv. Serve the folder over http(s);
        opening the file straight from disk won't load the .riv. -->
   <canvas id="game" tabindex="0"></canvas>
   <div id="error">The game couldn't load.</div>
@@ -176,7 +176,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791157723'; // set by build.sh
+    const RIV_VERSION = '1791395939'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -185,23 +185,26 @@
     const LEADERBOARD = {
       supabaseUrl: 'https://wkhfpujnynwflcimngjg.supabase.co',
       supabaseKey: 'sb_publishable_KJAWjztbbgQqlC6IYCYS4g_eeuVSd1z', // publishable: safe to be public
+      // This game's own table: the project's "scores" table is the original
+      // balloonGame's (scored in points), so the two leaderboards stay apart.
+      table: 'balloon2_scores',
     };
     const LIST_MAX = 100; // scores the ranking lists
     const NAME_MAX = 9;
     const SCORE_MAX = 1000000; // matches the table's check
 
     const online = !!(LEADERBOARD.supabaseUrl && LEADERBOARD.supabaseKey);
-    const LOCAL_KEY = 'poppit.scores';
-    const SEED_KEY = 'poppit.seed';
-    const MINE_KEY = 'poppit.mine'; // id of this player's last saved score
+    const LOCAL_KEY = 'balloonGame2.scores';
+    const SEED_KEY = 'balloonGame2.seed';
+    const MINE_KEY = 'balloonGame2.mine'; // id of this player's last saved score
 
     // The ranking starts out with these (made-up) players. Bumping SEED_VERSION
     // wipes a browser's saved scores and starts it over from this list.
     const SEED_VERSION = '2';
     const SEED = [
-      ['CICRANO', 6000],
-      ['FULANO', 4000],
-      ['ASTOLFO', 2000],
+      ['CICRANO', 60],
+      ['FULANO', 40],
+      ['ASTOLFO', 20],
     ];
 
     try {
@@ -237,7 +240,7 @@
     // The best scores, best first: [{ id, name, score }].
     function fetchTop() {
       if (!online) return Promise.resolve(readLocal().sort(byScore).slice(0, LIST_MAX));
-      return supabase('scores?select=id,name,score&order=score.desc,id.asc&limit=' + LIST_MAX);
+      return supabase(LEADERBOARD.table + '?select=id,name,score&order=score.desc,id.asc&limit=' + LIST_MAX);
     }
 
     // Saves a score; resolves to its id, so its row can be highlighted.
@@ -249,20 +252,16 @@
         writeLocal(rows.sort(byScore).slice(0, LIST_MAX * 2));
         return Promise.resolve(id);
       }
-      return supabase('scores', {
+      return supabase(LEADERBOARD.table, {
         method: 'POST',
         headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ name, score }),
       }).then((rows) => rows[0].id);
     }
 
-    // The page's words, in the game's language.
-    const pt = (navigator.language || '').toLowerCase().startsWith('pt');
-    const WORDS = pt
-      ? { newScore: 'nova pontuação!', yourName: 'digite seu nome', save: 'salvar', skip: 'pular',
-          loading: 'carregando...', offline: 'ranking indisponível' }
-      : { newScore: 'new score!', yourName: 'type in your name', save: 'save', skip: 'skip',
-          loading: 'loading...', offline: 'ranking unavailable' };
+    // The page's words (the game is English only).
+    const WORDS = { newScore: 'new score!', yourName: 'type in your name', save: 'save', skip: 'skip',
+      loading: 'loading...', offline: 'ranking unavailable' };
     document.querySelectorAll('[data-text]').forEach((el) => { el.textContent = WORDS[el.dataset.text]; });
     document.querySelectorAll('[data-placeholder]').forEach((el) => { el.placeholder = WORDS[el.dataset.placeholder]; });
 
@@ -289,7 +288,7 @@
       // passed on in artboard pixels.
       const wheel = vm.number('rankingWheel');
       canvas.addEventListener('wheel', (e) => {
-        const perPixel = Math.max(1080 / canvas.clientWidth, 1920 / canvas.clientHeight);
+        const perPixel = Math.max(1080 / canvas.clientWidth, 2100 / canvas.clientHeight);
         const lines = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? canvas.clientHeight : 1;
         wheel.value += e.deltaY * lines * perPixel;
         e.preventDefault();
@@ -365,7 +364,7 @@
     const r = new rive.Rive({
       // build.sh stamps a new version on every build, so browsers fetch the
       // new file instead of a cached one.
-      src: 'poppit.riv?v=' + RIV_VERSION,
+      src: 'balloonGame2.riv?v=' + RIV_VERSION,
       canvas,
       artboard: 'Artboard',
       stateMachines: 'State Machine 1',
@@ -374,7 +373,7 @@
       // Lets the file's url event open the portfolio link on the game-over
       // screen (in a new tab).
       automaticallyHandleEvents: true,
-      // Portrait 1080x1920 artboard, letterboxed to fit any window.
+      // Portrait 1080x2100 artboard, letterboxed to fit any window.
       layout: new rive.Layout({ fit: rive.Fit.Contain, alignment: rive.Alignment.Center }),
       onLoad: () => {
         // No text session from the runtime (2.44+): its hidden text field gets focused on every
@@ -382,10 +381,7 @@
         // has its own field for names.
         r.wantsTextInputSession = () => false;
         r.resizeDrawingSurfaceToCanvas();
-        // The game picks English or Portuguese from the host's language.
         const vm = r.viewModelInstance;
-        const locale = vm && vm.string('locale');
-        if (locale) locale.value = navigator.language || 'en';
         if (vm) setupLeaderboard(vm);
         canvas.focus();
       },

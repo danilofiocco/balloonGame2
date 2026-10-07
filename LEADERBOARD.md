@@ -1,5 +1,25 @@
 # Leaderboard
 
+> **balloonGame2 uses its own table, `balloon2_scores`** (set as
+> `LEADERBOARD.table` in `index.html`). The project's `scores` table belongs to
+> the original balloonGame and is left alone. To create (or later empty) this
+> game's table, run in the Supabase SQL Editor:
+>
+> ```sql
+> create table if not exists public.balloon2_scores (
+>   id bigint generated always as identity primary key,
+>   name text not null check (char_length(name) between 1 and 9),
+>   score integer not null check (score between 1 and 1000000),
+>   created_at timestamptz not null default now()
+> );
+> alter table public.balloon2_scores enable row level security;
+> create policy "read scores" on public.balloon2_scores for select to anon using (true);
+> create policy "add a score" on public.balloon2_scores for insert to anon with check (true);
+> create index if not exists balloon2_scores_rank on public.balloon2_scores (score desc, id);
+> ```
+>
+> To clear it later: `truncate public.balloon2_scores;`
+
 The ranking panel in the game shows whatever this page gives it. Scores are
 kept in one of two places:
 
