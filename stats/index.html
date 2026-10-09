@@ -73,6 +73,9 @@
       <div class="card"><div class="label">Average play time per session</div><div class="big" id="time">–</div><div class="note">until game over, or until they left</div></div>
       <div class="card"><div class="label">Coins earned per shot fired</div><div class="big" id="perShot">–</div><div class="note" id="perShot-note"></div></div>
       <div class="card"><div class="label">Coins spent on arrows per session</div><div class="big" id="spent">–</div><div class="note">out-of-arrows packs</div></div>
+      <div class="card"><div class="label">Super Combos</div><div class="big" id="supers">–</div><div class="note" id="supers-note"></div></div>
+      <div class="card"><div class="label">Ultra Combos</div><div class="big" id="ultras">–</div><div class="note" id="ultras-note"></div></div>
+      <div class="card"><div class="label">Average combo per shot</div><div class="big" id="combo">–</div><div class="note" id="combo-note"></div></div>
     </div>
 
     <section class="card">
@@ -140,6 +143,19 @@
       $('perShot').textContent = shots ? fmt(sum('earned') / shots, 1) : '–';
       $('perShot-note').textContent = `${fmt(sum('earned'))} coins over ${fmt(shots)} shots`;
       $('spent').textContent = ended.length ? fmt(sum('spent') / ended.length, 1) : '–';
+
+      // Combos: only games from v2.2.1 on record them (their "end" has "popped").
+      const counted = ended.filter((s) => s.end.popped !== undefined);
+      const csum = (key) => counted.reduce((t, s) => t + (s.end[key] || 0), 0);
+      const since = counted.length ? ` · ${fmt(counted.length)} sessions since v2.2.1` : 'counted from v2.2.1';
+      for (const key of ['supers', 'ultras']) {
+        const n = csum(key);
+        $(key).textContent = counted.length ? fmt(n) : '–';
+        $(key + '-note').textContent = counted.length ? `${fmt(n / counted.length, 2)} per session${since}` : since;
+      }
+      const cshots = csum('shots');
+      $('combo').textContent = cshots ? fmt(csum('popped') / cshots, 2) : '–';
+      $('combo-note').textContent = cshots ? `${fmt(csum('popped'))} balloons popped over ${fmt(cshots)} shots` : 'balloons popped per shot fired · ' + since;
 
       // Arrow kinds, most used first (bow shots).
       const arrows = {};
