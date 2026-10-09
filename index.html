@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
-  <title>Balloon Game 2</title>
+  <title>Bow Blast</title>
   <!-- Fallback for the name box where Arial Rounded MT Bold isn't installed. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap">
   <style>
@@ -176,7 +176,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@rive-app/webgl2@2.43.1/rive.js"></script>
   <script>
     const canvas = document.getElementById('game');
-    const RIV_VERSION = '1791559646'; // set by build.sh
+    const RIV_VERSION = '1791587281'; // set by build.sh
 
     // ---- Leaderboard ------------------------------------------------------
     // Scores live in a Supabase table once these two are filled in (see
@@ -272,7 +272,7 @@
     // boss (one per boss defeated) and end (game over, or the player quit or
     // left; a later one for the same session replaces it). Not from localhost
     // (add ?track to a local URL to send anyway).
-    const VERSION = '2.2.2';
+    const VERSION = '2.3.0';
     const EVENTS = 'balloon2_events';
     const tracking = online && (!/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) || /[?&]track\b/.test(location.search));
 
@@ -289,6 +289,16 @@
         },
         body: JSON.stringify({ session, kind, data, version: VERSION }),
       }).catch(() => {});
+    }
+
+    // The arrow kinds this device has unlocked at least once (the main menu's
+    // Arrow Guide shows the rest locked): kept in localStorage.
+    function setupArrowsSeen(vm) {
+      const prop = vm.string('arrowsSeen');
+      if (!prop) return;
+      const KEY = 'balloonGame2.arrowsSeen';
+      try { const saved = localStorage.getItem(KEY); if (saved) prop.value = saved; } catch (e) {}
+      prop.on(() => { try { localStorage.setItem(KEY, prop.value); } catch (e) {} });
     }
 
     function setupTelemetry(vm) {
@@ -442,6 +452,7 @@
         const vm = r.viewModelInstance;
         if (vm) setupLeaderboard(vm);
         if (vm) setupTelemetry(vm);
+        if (vm) setupArrowsSeen(vm);
         canvas.focus();
       },
       onLoadError: (e) => {
